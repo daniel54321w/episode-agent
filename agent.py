@@ -9,7 +9,7 @@ import anthropic
 from database import SupabaseClient
 from models import SearchResponse, VideoResult
 from scorer import score_result
-from searchers import search_dailymotion, search_telegram, search_web, search_youtube
+from searchers import search_dailymotion, search_telegram, search_web, search_vimeo, search_youtube
 from verifier import verify_all
 
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
@@ -69,6 +69,18 @@ TOOLS = [
         },
     },
     {
+        "name": "search_vimeo",
+        "description": "חיפוש ב-Vimeo — איכות גבוהה (1080p), ללא פרסומות, הטמעה ישירה. חפש תמיד!",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "series_name": {"type": "string", "description": "שם הסדרה בעברית"},
+                "episode_num": {"type": "integer", "description": "מספר הפרק"},
+            },
+            "required": ["series_name", "episode_num"],
+        },
+    },
+    {
         "name": "search_dailymotion",
         "description": "חיפוש ב-Dailymotion — מקור אמין עם אפשרות הטמעה ישירה. חפש תמיד!",
         "input_schema": {
@@ -114,6 +126,10 @@ class EpisodeSearchAgent:
         elif tool_name == "search_telegram":
             return await search_telegram(
                 tool_input["series_name"], tool_input["episode_num"]
+            )
+        elif tool_name == "search_vimeo":
+            return await search_vimeo(
+                tool_input["series_name"], tool_input["episode_num"], season
             )
         elif tool_name == "search_dailymotion":
             return await search_dailymotion(
@@ -183,7 +199,7 @@ class EpisodeSearchAgent:
                     output = []
 
                 # Collect raw search results for scoring later
-                if block.name in ("search_youtube", "search_web", "search_telegram", "search_dailymotion"):
+                if block.name in ("search_youtube", "search_web", "search_telegram", "search_dailymotion", "search_vimeo"):
                     if isinstance(output, list):
                         all_raw_results.extend(output)
 

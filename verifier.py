@@ -29,6 +29,8 @@ async def verify_source(result: Dict[str, Any]) -> bool:
             return await _verify_youtube(url)
         elif domain == "dailymotion.com":
             return await _verify_dailymotion(embed_url or url)
+        elif domain == "vimeo.com":
+            return await _verify_vimeo(url)
         elif domain == "t.me":
             return await _verify_head(url)
         else:
@@ -77,6 +79,25 @@ async def _verify_dailymotion(url: str) -> bool:
             return True
     except Exception:
         return True  # אם ה-API לא ענה — נניח שעובד
+
+
+async def _verify_vimeo(url: str) -> bool:
+    """בדיקת Vimeo דרך oEmbed API — אמינה ומהירה."""
+    import re
+    m = re.search(r"vimeo\.com/(\d+)", url)
+    if not m:
+        return False
+    video_id = m.group(1)
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(
+                "https://vimeo.com/api/oembed.json",
+                params={"url": f"https://vimeo.com/{video_id}"},
+                timeout=TIMEOUT,
+            )
+            return resp.status_code == 200
+    except Exception:
+        return False
 
 
 async def _verify_head(url: str) -> bool:

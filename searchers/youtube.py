@@ -79,7 +79,10 @@ async def search_youtube(series_name: str, episode_num: int) -> List[Dict[str, A
                     if "IL" in blocked:
                         continue
 
-                    can_embed = status.get("embeddable", True)
+                    # YouTube's embeddable flag is unreliable due to content ID claims (error 153).
+                    # Only trust it if explicitly set to False — otherwise mark as uncertain.
+                    embeddable_flag = status.get("embeddable", True)
+                    can_embed = embeddable_flag  # kept for scoring, but frontend should handle error 153
                     duration = _parse_iso_duration(content.get("duration", "PT0S"))
 
                     results.append({

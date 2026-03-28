@@ -122,9 +122,23 @@ def score_result(
         else:
             score -= 25.0  # heavy penalty — probably wrong series
 
-    # 10. Episode number appears in title
-    if str(episode_num) in title or f"פרק {episode_num}" in title:
-        score += 5.0
+    # 10. Episode number matching — bonus for correct, heavy penalty for wrong
+    import re
+    correct_ep = (
+        f"פרק {episode_num}" in title or
+        bool(re.search(rf'(?<!\d){re.escape(str(episode_num))}(?!\d)', title))
+    )
+    # Check if a DIFFERENT episode number is explicitly mentioned
+    wrong_ep = False
+    for m in re.findall(r'פרק\s*(\d+)', title):
+        if int(m) != episode_num:
+            wrong_ep = True
+            break
+
+    if correct_ep and not wrong_ep:
+        score += 15.0   # strong boost — confirmed correct episode
+    elif wrong_ep:
+        score -= 30.0   # heavy penalty — clearly wrong episode
 
     # 10. Hebrew subtitles (hard to detect automatically — bonus if confirmed)
     if result.get("has_hebrew_subtitles", False):

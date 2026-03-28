@@ -10,6 +10,7 @@ from database import SupabaseClient
 from models import SearchResponse, VideoResult
 from scorer import score_result
 from searchers import search_dailymotion, search_telegram, search_web, search_youtube
+from verifier import verify_all
 
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 
@@ -195,6 +196,11 @@ class EpisodeSearchAgent:
                 )
 
             messages.append({"role": "user", "content": tool_results})
+
+        # Verify all sources are actually accessible (parallel, fast)
+        print(f"  → בודק נגישות {len(all_raw_results)} מקורות...")
+        all_raw_results = await verify_all(all_raw_results)
+        print(f"  → {len(all_raw_results)} מקורות עברו בדיקת נגישות")
 
         # Score all collected results
         scored: List[VideoResult] = []

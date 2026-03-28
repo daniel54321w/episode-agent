@@ -213,22 +213,8 @@ class EpisodeSearchAgent:
             except Exception as e:
                 print(f"VideoResult creation error: {e} — raw: {raw}")
 
-        # Hard filter: remove results that are clearly wrong
-        MIN_DURATION = 4 * 60   # 4 minutes minimum
-        MAX_DURATION = 90 * 60  # 90 minutes maximum
-        MIN_SCORE = 30.0        # below this — not worth showing
-
-        def _is_valid(r: VideoResult) -> bool:
-            # Filter by duration if known
-            if r.duration_seconds:
-                if r.duration_seconds < MIN_DURATION or r.duration_seconds > MAX_DURATION:
-                    return False
-            # Filter very low scores
-            if r.final_score < MIN_SCORE:
-                return False
-            return True
-
-        scored = [r for r in scored if _is_valid(r)]
+        # Remove results that failed gates (score == 0) or are too low
+        scored = [r for r in scored if r.final_score > 0]
 
         # Sort and deduplicate
         scored.sort(key=lambda r: r.final_score, reverse=True)

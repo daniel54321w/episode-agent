@@ -9,7 +9,7 @@ import anthropic
 from database import SupabaseClient
 from models import SearchResponse, VideoResult
 from scorer import score_result
-from searchers import search_telegram, search_web, search_youtube
+from searchers import search_dailymotion, search_telegram, search_web, search_youtube
 
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 
@@ -68,6 +68,18 @@ TOOLS = [
         },
     },
     {
+        "name": "search_dailymotion",
+        "description": "חיפוש ב-Dailymotion — מקור אמין עם אפשרות הטמעה ישירה. חפש תמיד!",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "series_name": {"type": "string", "description": "שם הסדרה בעברית"},
+                "episode_num": {"type": "integer", "description": "מספר הפרק"},
+            },
+            "required": ["series_name", "episode_num"],
+        },
+    },
+    {
         "name": "get_source_history",
         "description": "קבל נתוני אמינות היסטוריים על דומיין מסויים מהמאגר שלנו.",
         "input_schema": {
@@ -102,6 +114,10 @@ class EpisodeSearchAgent:
             return await search_telegram(
                 tool_input["series_name"], tool_input["episode_num"]
             )
+        elif tool_name == "search_dailymotion":
+            return await search_dailymotion(
+                tool_input["series_name"], tool_input["episode_num"]
+            )
         elif tool_name == "get_source_history":
             return await self.db.get_source_history(tool_input["domain"])
         return None
@@ -122,10 +138,11 @@ class EpisodeSearchAgent:
                     f"חפש את הסדרה **{series}** פרק **{episode}**.\n\n"
                     "בצע את הצעדים הבאים:\n"
                     "1. חפש ביוטיוב\n"
-                    "2. חפש ברשת (אתרי סטרימינג)\n"
-                    "3. חפש בטלגרם\n"
-                    "4. לכל דומיין שמצאת — בדוק את ההיסטוריה שלו\n"
-                    "5. סכם את הממצאים והמלץ על המקור הטוב ביותר"
+                    "2. חפש ב-Dailymotion (חובה! מקור אמין עם הטמעה ישירה)\n"
+                    "3. חפש ברשת (אתרי סטרימינג)\n"
+                    "4. חפש בטלגרם\n"
+                    "5. לכל דומיין שמצאת — בדוק את ההיסטוריה שלו\n"
+                    "6. סכם את הממצאים והמלץ על המקור הטוב ביותר"
                 ),
             }
         ]
@@ -164,7 +181,7 @@ class EpisodeSearchAgent:
                     output = []
 
                 # Collect raw search results for scoring later
-                if block.name in ("search_youtube", "search_web", "search_telegram"):
+                if block.name in ("search_youtube", "search_web", "search_telegram", "search_dailymotion"):
                     if isinstance(output, list):
                         all_raw_results.extend(output)
 

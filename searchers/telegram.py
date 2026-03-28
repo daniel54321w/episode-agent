@@ -26,8 +26,9 @@ async def search_telegram(series_name: str, episode_num: int) -> List[Dict[str, 
     seen_urls: set = set()
 
     queries = [
-        f"site:t.me {series_name} פרק {episode_num}",
-        f"telegram {series_name} פרק {episode_num} download",
+        f'"{series_name}" "פרק {episode_num}" site:t.me',
+        f'"{series_name}" פרק {episode_num} telegram',
+        f"{series_name} פרק {episode_num} t.me",
     ]
 
     async with httpx.AsyncClient() as client:

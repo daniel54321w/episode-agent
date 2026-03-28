@@ -51,13 +51,13 @@ async def search_youtube(series_name: str, episode_num: int) -> List[Dict[str, A
                 if not new_ids:
                     continue
 
-                # Get full details: duration + stats
+                # Get full details: duration + stats + status (to filter broken videos)
                 details_resp = await client.get(
                     YOUTUBE_VIDEO_URL,
                     params={
                         "key": YOUTUBE_API_KEY,
                         "id": ",".join(new_ids),
-                        "part": "contentDetails,statistics,snippet",
+                        "part": "contentDetails,statistics,snippet,status",
                     },
                     timeout=10,
                 )
@@ -68,13 +68,24 @@ async def search_youtube(series_name: str, episode_num: int) -> List[Dict[str, A
                     snippet = item.get("snippet", {})
                     content = item.get("contentDetails", {})
                     stats = item.get("statistics", {})
+                    status = item.get("status", {})
 
+                    # Skip private, deleted, or blocked videos
+                    if status.get("privacyStatus") != "public":
+                        continue
+                    # Skip videos blocked in Israel
+                    region_restriction = content.get("regionRestriction", {})
+                    blocked = region_restriction.get("blocked", [])
+                    if "IL" in blocked:
+                        continue
+
+                    can_embed = status.get("embeddable", True)
                     duration = _parse_iso_duration(content.get("duration", "PT0S"))
 
                     results.append({
                         "source": "youtube",
                         "url": f"https://www.youtube.com/watch?v={vid_id}",
-                        "embed_url": f"https://www.youtube.com/embed/{vid_id}",
+                        "embed_url": f"https://www.youtube.com/embed/{vid_id}" if can_embed else None,
                         "title": snippet.get("title", ""),
                         "description": snippet.get("description", "")[:300],
                         "channel": snippet.get("channelTitle", ""),
@@ -82,7 +93,7 @@ async def search_youtube(series_name: str, episode_num: int) -> List[Dict[str, A
                         "view_count": int(stats.get("viewCount", 0)),
                         "upload_date": snippet.get("publishedAt", ""),
                         "domain": "youtube.com",
-                        "can_embed": True,
+                        "can_embed": can_embed,
                         "quality": "auto",  # YouTube auto-adjusts
                         "is_free": True,
                         "has_ads": True,

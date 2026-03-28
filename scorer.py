@@ -1,3 +1,4 @@
+import re
 from typing import Dict, Any, Optional, Tuple
 from datetime import datetime, timezone
 
@@ -132,7 +133,6 @@ def score_result(
             score -= 25.0   # wrong season — heavy penalty
 
     # 10. Episode number matching — bonus for correct, heavy penalty for wrong
-    import re
     correct_ep = (
         f"פרק {episode_num}" in title or
         bool(re.search(rf'(?<!\d){re.escape(str(episode_num))}(?!\d)', title))

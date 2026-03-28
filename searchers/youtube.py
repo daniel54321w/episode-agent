@@ -8,15 +8,28 @@ YOUTUBE_SEARCH_URL = "https://www.googleapis.com/youtube/v3/search"
 YOUTUBE_VIDEO_URL = "https://www.googleapis.com/youtube/v3/videos"
 
 
-async def search_youtube(series_name: str, episode_num: int) -> List[Dict[str, Any]]:
+async def _is_youtube_accessible(client: httpx.AsyncClient, video_id: str) -> bool:
+    """Check if a YouTube video is actually accessible via oEmbed API."""
+    try:
+        resp = await client.get(
+            "https://www.youtube.com/oembed",
+            params={"url": f"https://www.youtube.com/watch?v={video_id}", "format": "json"},
+            timeout=5,
+        )
+        return resp.status_code == 200
+    except Exception:
+        return False
+
+
+async def search_youtube(series_name: str, episode_num: int, season_num: int = 1) -> List[Dict[str, Any]]:
     """Search YouTube for a specific Israeli series episode."""
     if not YOUTUBE_API_KEY:
         print("Warning: YOUTUBE_API_KEY not set")
         return []
 
     queries = [
-        f"{series_name} פרק {episode_num} מלא",
-        f"{series_name} פרק {episode_num} לצפייה ישירה",
+        f"{series_name} עונה {season_num} פרק {episode_num} מלא",
+        f"{series_name} עונה {season_num} פרק {episode_num} לצפייה ישירה",
     ]
 
     results = []
@@ -79,10 +92,11 @@ async def search_youtube(series_name: str, episode_num: int) -> List[Dict[str, A
                     if "IL" in blocked:
                         continue
 
-                    # YouTube's embeddable flag is unreliable due to content ID claims (error 153).
-                    # Only trust it if explicitly set to False — otherwise mark as uncertain.
-                    embeddable_flag = status.get("embeddable", True)
-                    can_embed = embeddable_flag  # kept for scoring, but frontend should handle error 153
+                    # Verify video is actually accessible (catches error 153 / content ID blocks)
+                    if not await _is_youtube_accessible(client, vid_id):
+                        continue
+
+                    can_embed = status.get("embeddable", True)
                     duration = _parse_iso_duration(content.get("duration", "PT0S"))
 
                     results.append({

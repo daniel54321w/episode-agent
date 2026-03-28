@@ -4,11 +4,11 @@ from typing import List, Dict, Any
 DAILYMOTION_API = "https://api.dailymotion.com/videos"
 
 
-async def search_dailymotion(series_name: str, episode_num: int) -> List[Dict[str, Any]]:
+async def search_dailymotion(series_name: str, episode_num: int, season_num: int = 1) -> List[Dict[str, Any]]:
     """Search Dailymotion for Israeli series episodes using their public API."""
     queries = [
+        f"{series_name} עונה {season_num} פרק {episode_num}",
         f"{series_name} פרק {episode_num}",
-        f"{series_name} episode {episode_num}",
     ]
 
     results = []

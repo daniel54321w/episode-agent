@@ -99,12 +99,12 @@ class EpisodeSearchAgent:
         self.db = SupabaseClient()
 
     async def _execute_tool(
-        self, tool_name: str, tool_input: Dict[str, Any]
+        self, tool_name: str, tool_input: Dict[str, Any], season: int = 1
     ) -> Any:
         """Dispatch tool calls to the appropriate searcher or DB function."""
         if tool_name == "search_youtube":
             return await search_youtube(
-                tool_input["series_name"], tool_input["episode_num"]
+                tool_input["series_name"], tool_input["episode_num"], season
             )
         elif tool_name == "search_web":
             return await search_web(
@@ -116,7 +116,7 @@ class EpisodeSearchAgent:
             )
         elif tool_name == "search_dailymotion":
             return await search_dailymotion(
-                tool_input["series_name"], tool_input["episode_num"]
+                tool_input["series_name"], tool_input["episode_num"], season
             )
         elif tool_name == "get_source_history":
             return await self.db.get_source_history(tool_input["domain"])
@@ -170,7 +170,7 @@ class EpisodeSearchAgent:
 
             # Execute all tool calls in parallel
             tasks = [
-                self._execute_tool(b.name, b.input) for b in tool_use_blocks
+                self._execute_tool(b.name, b.input, season) for b in tool_use_blocks
             ]
             tool_outputs = await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -212,6 +212,23 @@ class EpisodeSearchAgent:
                 scored.append(VideoResult(**raw))
             except Exception as e:
                 print(f"VideoResult creation error: {e} — raw: {raw}")
+
+        # Hard filter: remove results that are clearly wrong
+        MIN_DURATION = 4 * 60   # 4 minutes minimum
+        MAX_DURATION = 90 * 60  # 90 minutes maximum
+        MIN_SCORE = 30.0        # below this — not worth showing
+
+        def _is_valid(r: VideoResult) -> bool:
+            # Filter by duration if known
+            if r.duration_seconds:
+                if r.duration_seconds < MIN_DURATION or r.duration_seconds > MAX_DURATION:
+                    return False
+            # Filter very low scores
+            if r.final_score < MIN_SCORE:
+                return False
+            return True
+
+        scored = [r for r in scored if _is_valid(r)]
 
         # Sort and deduplicate
         scored.sort(key=lambda r: r.final_score, reverse=True)

@@ -61,7 +61,9 @@ class SupabaseClient:
                 )
                 avg_q = existing.get("avg_quality_score", 5.0)
                 if feedback.quality_rating:
-                    avg_q = (avg_q * (total - 1) + feedback.quality_rating) / total
+                    # Scale 1-5 stars → 1-10 for internal scoring
+                    scaled = min(feedback.quality_rating * 2, 10)
+                    avg_q = (avg_q * (total - 1) + scaled) / total
 
                 self.client.table("source_history").update(
                     {
@@ -73,13 +75,14 @@ class SupabaseClient:
                     }
                 ).eq("domain", feedback.domain).execute()
             else:
+                scaled_initial = min((feedback.quality_rating or 5) * 2, 10)
                 self.client.table("source_history").insert(
                     {
                         "domain": feedback.domain,
                         "total_uses": 1,
                         "successful_plays": 1 if feedback.played_successfully else 0,
                         "failed_plays": 0 if feedback.played_successfully else 1,
-                        "avg_quality_score": feedback.quality_rating or 5.0,
+                        "avg_quality_score": scaled_initial,
                         "last_used": datetime.now(timezone.utc).isoformat(),
                     }
                 ).execute()

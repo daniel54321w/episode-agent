@@ -4,7 +4,7 @@ from typing import Optional, Dict, Any
 from datetime import datetime, timezone
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
+SUPABASE_KEY = os.getenv("DB_SERVICE_KEY")
 
 # Lazy import — only if configured
 _supabase_client = None

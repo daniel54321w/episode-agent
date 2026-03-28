@@ -222,7 +222,7 @@ class EpisodeSearchAgent:
         scored: List[VideoResult] = []
         for raw in all_raw_results:
             domain = raw.get("domain", "")
-            history = await self.db.get_source_history(domain)
+            history = await self.db.get_source_history(domain, series)
             raw_score, history_bonus, final_score = score_result(raw, history, episode, series, season)
 
             raw["raw_score"] = round(raw_score, 1)

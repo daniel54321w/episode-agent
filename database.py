@@ -1,12 +1,10 @@
 import os
-import json
 from typing import Optional, Dict, Any
 from datetime import datetime, timezone
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("DB_SERVICE_KEY")
 
-# Lazy import — only if configured
 _supabase_client = None
 
 
@@ -28,7 +26,14 @@ class SupabaseClient:
 
     # ── Source history (learning) ─────────────────────────────────────────────
 
-    async def get_source_history(self, domain: str) -> Optional[Dict[str, Any]]:
+    async def get_source_history(
+        self, domain: str, series_name: Optional[str] = None
+    ) -> Optional[Dict[str, Any]]:
+        """
+        מחזיר היסטוריה בשתי רמות:
+          - אם series_name נמסר: מחזיר {"series": {...}, "global": {...}}
+          - אחרת: מחזיר רק גלובלי
+        """
         if not self.client or not domain:
             return None
         try:
@@ -38,61 +43,82 @@ class SupabaseClient:
                 .eq("domain", domain)
                 .execute()
             )
-            if result.data:
-                return result.data[0]
+            rows = result.data or []
+
+            global_row = next((r for r in rows if r.get("series_name") is None), None)
+            series_row = None
+            if series_name:
+                series_row = next(
+                    (r for r in rows if r.get("series_name") == series_name), None
+                )
+
+            if series_row or global_row:
+                return {"series": series_row, "global": global_row}
         except Exception as e:
             print(f"DB get_source_history error: {e}")
         return None
 
     async def update_source_score(self, feedback) -> None:
-        """Update domain reliability based on user feedback."""
+        """Update domain reliability at both series-level and global-level."""
         if not self.client:
             return
+        series = getattr(feedback, "series", None)
+        # עדכן ברמת הסדרה
+        if series:
+            await self._upsert_history(feedback, series_name=series)
+        # עדכן ברמה גלובלית
+        await self._upsert_history(feedback, series_name=None)
+
+    async def _upsert_history(self, feedback, series_name: Optional[str]) -> None:
+        """Insert or update one row in source_history."""
         try:
-            existing = await self.get_source_history(feedback.domain)
+            rows = (
+                self.client.table("source_history")
+                .select("*")
+                .eq("domain", feedback.domain)
+                .execute()
+            ).data or []
+
+            if series_name is None:
+                existing = next((r for r in rows if r.get("series_name") is None), None)
+            else:
+                existing = next(
+                    (r for r in rows if r.get("series_name") == series_name), None
+                )
+
+            scaled_q = min((feedback.quality_rating or 5) * 2, 10) if feedback.quality_rating else None
 
             if existing:
                 total = existing["total_uses"] + 1
-                successful = existing["successful_plays"] + (
-                    1 if feedback.played_successfully else 0
-                )
-                failed = existing.get("failed_plays", 0) + (
-                    0 if feedback.played_successfully else 1
-                )
+                successful = existing["successful_plays"] + (1 if feedback.played_successfully else 0)
+                failed = existing.get("failed_plays", 0) + (0 if feedback.played_successfully else 1)
                 avg_q = existing.get("avg_quality_score", 5.0)
-                if feedback.quality_rating:
-                    # Scale 1-5 stars → 1-10 for internal scoring
-                    scaled = min(feedback.quality_rating * 2, 10)
-                    avg_q = (avg_q * (total - 1) + scaled) / total
+                if scaled_q:
+                    avg_q = (avg_q * (total - 1) + scaled_q) / total
 
-                self.client.table("source_history").update(
-                    {
-                        "total_uses": total,
-                        "successful_plays": successful,
-                        "failed_plays": failed,
-                        "avg_quality_score": round(avg_q, 2),
-                        "last_used": datetime.now(timezone.utc).isoformat(),
-                    }
-                ).eq("domain", feedback.domain).execute()
+                self.client.table("source_history").update({
+                    "total_uses": total,
+                    "successful_plays": successful,
+                    "failed_plays": failed,
+                    "avg_quality_score": round(avg_q, 2),
+                    "last_used": datetime.now(timezone.utc).isoformat(),
+                }).eq("id", existing["id"]).execute()
             else:
-                scaled_initial = min((feedback.quality_rating or 5) * 2, 10)
-                self.client.table("source_history").insert(
-                    {
-                        "domain": feedback.domain,
-                        "total_uses": 1,
-                        "successful_plays": 1 if feedback.played_successfully else 0,
-                        "failed_plays": 0 if feedback.played_successfully else 1,
-                        "avg_quality_score": scaled_initial,
-                        "last_used": datetime.now(timezone.utc).isoformat(),
-                    }
-                ).execute()
+                self.client.table("source_history").insert({
+                    "domain": feedback.domain,
+                    "series_name": series_name,
+                    "total_uses": 1,
+                    "successful_plays": 1 if feedback.played_successfully else 0,
+                    "failed_plays": 0 if feedback.played_successfully else 1,
+                    "avg_quality_score": scaled_q or 5.0,
+                    "last_used": datetime.now(timezone.utc).isoformat(),
+                }).execute()
         except Exception as e:
-            print(f"DB update_source_score error: {e}")
+            print(f"DB _upsert_history error ({series_name}): {e}")
 
     # ── Search result cache ───────────────────────────────────────────────────
 
     async def get_cached_results(self, series: str, episode: int, season: int = 1):
-        """Return cached SearchResponse if it exists and is <24h old."""
         if not self.client:
             return None
         try:
@@ -109,12 +135,9 @@ class SupabaseClient:
 
             row = result.data[0]
             cached_at = datetime.fromisoformat(row["cached_at"])
-            # Ensure timezone-aware comparison
             if cached_at.tzinfo is None:
                 cached_at = cached_at.replace(tzinfo=timezone.utc)
-            age_hours = (
-                datetime.now(timezone.utc) - cached_at
-            ).total_seconds() / 3600
+            age_hours = (datetime.now(timezone.utc) - cached_at).total_seconds() / 3600
 
             if age_hours < 24:
                 from models import SearchResponse

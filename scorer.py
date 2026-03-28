@@ -204,15 +204,34 @@ def score_bonuses(
     raw_score = max(0.0, min(100.0, score))
 
     # B13 — בונוס היסטוריה (-15 עד +15)
+    # שתי רמות: סדרה ספציפית (60%) + גלובלי (40%)
     history_bonus = 0.0
     if domain_history:
-        total = domain_history.get("total_uses", 0)
-        successful = domain_history.get("successful_plays", 0)
-        if total >= 3:
-            rate = successful / total
-            history_bonus += (rate - 0.5) * 30.0
-        avg_q = domain_history.get("avg_quality_score", 5.0)
-        history_bonus += (avg_q - 5.0) * 1.0
+        series_h = domain_history.get("series")   # ספציפי לסדרה
+        global_h = domain_history.get("global")   # כללי
+
+        def _calc_bonus(h) -> float:
+            if not h:
+                return 0.0
+            total = h.get("total_uses", 0)
+            successful = h.get("successful_plays", 0)
+            bonus = 0.0
+            if total >= 3:
+                rate = successful / total
+                bonus += (rate - 0.5) * 30.0
+            avg_q = h.get("avg_quality_score", 5.0)
+            bonus += (avg_q - 5.0) * 1.0
+            return max(-15.0, min(15.0, bonus))
+
+        series_bonus = _calc_bonus(series_h)
+        global_bonus = _calc_bonus(global_h)
+
+        if series_h and series_h.get("total_uses", 0) >= 3:
+            # יש מספיק נתונים על הסדרה הספציפית — שקלול 60/40
+            history_bonus = series_bonus * 0.6 + global_bonus * 0.4
+        elif global_h:
+            # אין מספיק נתוני סדרה — סמוך רק על גלובלי
+            history_bonus = global_bonus
         history_bonus = max(-15.0, min(15.0, history_bonus))
 
     final_score = max(0.0, min(100.0, raw_score + history_bonus))

@@ -52,6 +52,7 @@ def score_result(
     history: Optional[Dict] = None,
     episode_num: int = 1,
     series_name: str = "",
+    season_num: int = 1,
 ) -> Tuple[float, float, float]:
     """
     Score a video result.
@@ -121,6 +122,14 @@ def score_result(
             score += 20.0  # strong boost — correct series confirmed
         else:
             score -= 25.0  # heavy penalty — probably wrong series
+
+    # 9b. Season number matching
+    season_patterns = re.findall(r'עונה\s*(\d+)', title)
+    if season_patterns:
+        if any(int(s) == season_num for s in season_patterns):
+            score += 10.0   # correct season confirmed
+        else:
+            score -= 25.0   # wrong season — heavy penalty
 
     # 10. Episode number matching — bonus for correct, heavy penalty for wrong
     import re

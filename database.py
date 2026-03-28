@@ -91,7 +91,7 @@ class SupabaseClient:
 
     # ── Search result cache ───────────────────────────────────────────────────
 
-    async def get_cached_results(self, series: str, episode: int):
+    async def get_cached_results(self, series: str, episode: int, season: int = 1):
         """Return cached SearchResponse if it exists and is <24h old."""
         if not self.client:
             return None
@@ -101,6 +101,7 @@ class SupabaseClient:
                 .select("*")
                 .eq("series_name", series)
                 .eq("episode_num", episode)
+                .eq("season_num", season)
                 .execute()
             )
             if not result.data:
@@ -124,7 +125,7 @@ class SupabaseClient:
             print(f"DB get_cached_results error: {e}")
         return None
 
-    async def cache_results(self, series: str, episode: int, results) -> None:
+    async def cache_results(self, series: str, episode: int, results, season: int = 1) -> None:
         if not self.client:
             return
         try:
@@ -132,10 +133,11 @@ class SupabaseClient:
                 {
                     "series_name": series,
                     "episode_num": episode,
+                    "season_num": season,
                     "results_json": results.model_dump_json(),
                     "cached_at": datetime.now(timezone.utc).isoformat(),
                 },
-                on_conflict="series_name,episode_num",
+                on_conflict="series_name,episode_num,season_num",
             ).execute()
         except Exception as e:
             print(f"DB cache_results error: {e}")

@@ -122,7 +122,7 @@ class EpisodeSearchAgent:
             return await self.db.get_source_history(tool_input["domain"])
         return None
 
-    async def search(self, series: str, episode: int) -> SearchResponse:
+    async def search(self, series: str, episode: int, season: int = 1) -> SearchResponse:
         """
         Run the agentic search loop:
         1. Claude decides which tools to use
@@ -135,7 +135,8 @@ class EpisodeSearchAgent:
             {
                 "role": "user",
                 "content": (
-                    f"חפש את הסדרה **{series}** פרק **{episode}**.\n\n"
+                    f"חפש את הסדרה **{series}** עונה **{season}** פרק **{episode}**.\n\n"
+                    "חשוב מאוד: חפש רק תוצאות מהעונה הנכונה!\n\n"
                     "בצע את הצעדים הבאים:\n"
                     "1. חפש ביוטיוב\n"
                     "2. חפש ב-Dailymotion (חובה! מקור אמין עם הטמעה ישירה)\n"
@@ -200,11 +201,12 @@ class EpisodeSearchAgent:
         for raw in all_raw_results:
             domain = raw.get("domain", "")
             history = await self.db.get_source_history(domain)
-            raw_score, history_bonus, final_score = score_result(raw, history, episode, series)
+            raw_score, history_bonus, final_score = score_result(raw, history, episode, series, season)
 
             raw["raw_score"] = round(raw_score, 1)
             raw["history_bonus"] = round(history_bonus, 1)
             raw["final_score"] = round(final_score, 1)
+
 
             try:
                 scored.append(VideoResult(**raw))

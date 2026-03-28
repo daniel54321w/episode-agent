@@ -51,6 +51,7 @@ app.add_middleware(
 async def search_episode(
     series: str = Query(..., description="שם הסדרה בעברית, לדוגמה: החממה"),
     episode: int = Query(..., ge=1, description="מספר הפרק"),
+    season: int = Query(1, ge=1, description="מספר העונה (ברירת מחדל: 1)"),
     force_refresh: bool = Query(False, description="חיפוש מחדש גם אם יש תוצאות שמורות"),
 ):
     """
@@ -58,18 +59,18 @@ async def search_episode(
     """
     # Try cache first
     if not force_refresh:
-        cached = await db.get_cached_results(series, episode)
+        cached = await db.get_cached_results(series, episode, season)
         if cached:
             return cached
 
     try:
-        results = await agent.search(series, episode)
+        results = await agent.search(series, episode, season)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"שגיאה בחיפוש: {str(e)}")
 
     # Save to cache in the background
     import asyncio
-    asyncio.create_task(db.cache_results(series, episode, results))
+    asyncio.create_task(db.cache_results(series, episode, results, season))
 
     return results
 

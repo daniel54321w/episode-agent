@@ -39,7 +39,39 @@ class SearchResponse(BaseModel):
 class FeedbackRequest(BaseModel):
     series: str
     episode: int
+    season: int = 1
     url: str
     domain: str
     played_successfully: bool
     quality_rating: Optional[int] = None  # 1-10
+    watch_duration_seconds: Optional[int] = None  # כמה שניות נצפה
+
+
+class WatchProgressRequest(BaseModel):
+    series: str
+    episode: int
+    season: int = 1
+    url: str
+    position_seconds: int  # מיקום נוכחי בסרטון
+    duration_seconds: Optional[int] = None  # אורך כולל
+
+
+class WatchProgressResponse(BaseModel):
+    series: str
+    episode: int
+    season: int
+    url: str
+    position_seconds: int
+    duration_seconds: Optional[int] = None
+    last_watched: datetime
+
+
+class AdminSourceStat(BaseModel):
+    domain: str
+    series_name: Optional[str] = None
+    total_uses: int
+    successful_plays: int
+    failed_plays: int
+    avg_quality_score: float
+    success_rate: float
+    last_used: Optional[str] = None

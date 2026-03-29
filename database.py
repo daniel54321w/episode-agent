@@ -116,6 +116,154 @@ class SupabaseClient:
         except Exception as e:
             print(f"DB _upsert_history error ({series_name}): {e}")
 
+    # ── Watch history ─────────────────────────────────────────────────────────
+
+    async def save_watch_progress(self, series: str, episode: int, season: int, url: str, position_seconds: int, duration_seconds=None) -> None:
+        if not self.client:
+            return
+        try:
+            self.client.table("watch_history").upsert(
+                {
+                    "series_name": series,
+                    "episode_num": episode,
+                    "season_num": season,
+                    "url": url,
+                    "position_seconds": position_seconds,
+                    "duration_seconds": duration_seconds,
+                    "last_watched": datetime.now(timezone.utc).isoformat(),
+                },
+                on_conflict="series_name,episode_num,season_num",
+            ).execute()
+        except Exception as e:
+            print(f"DB save_watch_progress error: {e}")
+
+    async def get_watch_progress(self, series: str, episode: int, season: int) -> Optional[Dict[str, Any]]:
+        if not self.client:
+            return None
+        try:
+            result = (
+                self.client.table("watch_history")
+                .select("*")
+                .eq("series_name", series)
+                .eq("episode_num", episode)
+                .eq("season_num", season)
+                .execute()
+            )
+            if result.data:
+                return result.data[0]
+        except Exception as e:
+            print(f"DB get_watch_progress error: {e}")
+        return None
+
+    async def get_all_watch_history(self) -> list:
+        if not self.client:
+            return []
+        try:
+            result = (
+                self.client.table("watch_history")
+                .select("*")
+                .order("last_watched", desc=True)
+                .execute()
+            )
+            return result.data or []
+        except Exception as e:
+            print(f"DB get_all_watch_history error: {e}")
+        return []
+
+    # ── Admin stats ───────────────────────────────────────────────────────────
+
+    async def get_source_stats(self) -> list:
+        if not self.client:
+            return []
+        try:
+            result = (
+                self.client.table("source_history")
+                .select("*")
+                .order("total_uses", desc=True)
+                .execute()
+            )
+            rows = result.data or []
+            stats = []
+            for r in rows:
+                total = r.get("total_uses", 0)
+                successful = r.get("successful_plays", 0)
+                stats.append({
+                    **r,
+                    "success_rate": round(successful / total, 2) if total > 0 else 0.0,
+                })
+            return stats
+        except Exception as e:
+            print(f"DB get_source_stats error: {e}")
+        return []
+
+    async def get_stale_cache_entries(self, older_than_hours: int = 20) -> list:
+        """מחזיר רשומות קאש שדורשות רענון."""
+        if not self.client:
+            return []
+        try:
+            result = (
+                self.client.table("search_cache")
+                .select("series_name,episode_num,season_num,cached_at")
+                .execute()
+            )
+            rows = result.data or []
+            stale = []
+            now = datetime.now(timezone.utc)
+            for r in rows:
+                cached_at = datetime.fromisoformat(r["cached_at"])
+                if cached_at.tzinfo is None:
+                    cached_at = cached_at.replace(tzinfo=timezone.utc)
+                age_hours = (now - cached_at).total_seconds() / 3600
+                if age_hours >= older_than_hours:
+                    stale.append(r)
+            return stale
+        except Exception as e:
+            print(f"DB get_stale_cache_entries error: {e}")
+        return []
+
+    # ── Search result cache ───────────────────────────────────────────────────
+
+    # ── Theme song cache (permanent) ──────────────────────────────────────────
+
+    async def get_theme_song(self, series_name: str) -> Optional[Dict[str, Any]]:
+        """מחזיר שיר פתיחה שמור — קאש קבוע, לא פג תוקף."""
+        if not self.client:
+            return None
+        try:
+            result = (
+                self.client.table("theme_songs")
+                .select("*")
+                .eq("series_name", series_name)
+                .execute()
+            )
+            if result.data:
+                return result.data[0]
+        except Exception as e:
+            print(f"DB get_theme_song error: {e}")
+        return None
+
+    async def save_theme_song(self, series_name: str, song: Dict[str, Any]) -> None:
+        """שומר שיר פתיחה — פעם אחת לתמיד."""
+        if not self.client:
+            return
+        try:
+            self.client.table("theme_songs").upsert(
+                {
+                    "series_name": series_name,
+                    "url": song.get("url"),
+                    "embed_url": song.get("embed_url"),
+                    "video_id": song.get("video_id"),
+                    "title": song.get("title"),
+                    "channel": song.get("channel"),
+                    "duration_seconds": song.get("duration_seconds"),
+                    "view_count": song.get("view_count"),
+                    "found_at": datetime.now(timezone.utc).isoformat(),
+                },
+                on_conflict="series_name",
+            ).execute()
+        except Exception as e:
+            print(f"DB save_theme_song error: {e}")
+
     # ── Search result cache ───────────────────────────────────────────────────
 
     async def get_cached_results(self, series: str, episode: int, season: int = 1):

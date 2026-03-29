@@ -105,10 +105,6 @@ async def find_theme_song(series_name: str) -> Optional[Dict[str, Any]]:
                     can_embed = status.get("embeddable", True)
                     duration = _parse_iso_duration(content.get("duration", "PT0S"))
 
-                    # שיר פתיחה — בין 30 שניות ל-6 דקות
-                    if duration < 30 or duration > 360:
-                        continue
-
                     title = snippet.get("title", "")
                     channel = snippet.get("channelTitle", "")
                     score = _score_candidate(title, channel, series_name, duration, stats)
@@ -142,13 +138,13 @@ async def find_theme_song(series_name: str) -> Optional[Dict[str, Any]]:
 
 
 def _score_candidate(title: str, channel: str, series_name: str, duration: int, stats: dict) -> float:
-    score = 0.0
+    score = 10.0  # ציון בסיס — כל תוצאה מקבלת נקודות
     title_lower = title.lower()
     channel_lower = channel.lower()
 
-    # שם הסדרה בכותרת — חובה
-    if series_name.lower() not in title_lower:
-        return 0.0
+    # שם הסדרה בכותרת — בונוס גדול (לא חובה)
+    if series_name.lower() in title_lower:
+        score += 40.0
 
     # מילות מפתח של שיר פתיחה
     for kw in _TITLE_KEYWORDS:

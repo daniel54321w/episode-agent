@@ -1,27 +1,80 @@
 """
-חיפוש מאחורי הקלעים ופספוסים ב-YouTube דרך yt-dlp (ללא API key).
+חיפוש מאחורי הקלעים ופספוסים ב-YouTube.
+מנסה קודם YouTube Data API, ואם quota נגמר — עובר ל-yt-dlp.
 """
 import asyncio
+import os
+import httpx
 from typing import List, Dict, Any
+
+YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY")
+YOUTUBE_SEARCH_URL = "https://www.googleapis.com/youtube/v3/search"
 
 
 async def find_extras(series_name: str) -> Dict[str, List[Dict[str, Any]]]:
+    # נסה קודם YouTube API
+    if YOUTUBE_API_KEY:
+        try:
+            result = await _find_via_api(series_name)
+            if result["bts"] or result["bloopers"]:
+                print(f"Extras via API: {len(result['bts'])} bts, {len(result['bloopers'])} bloopers")
+                return result
+        except Exception as e:
+            print(f"YouTube API failed ({e}), falling back to yt-dlp")
+
+    # fallback — yt-dlp
+    print("Extras: using yt-dlp fallback")
     bts, bloopers = await asyncio.gather(
-        _search(f"{series_name} מאחורי הקלעים", series_name),
-        _search(f"{series_name} פספוסים", series_name),
+        _search_ytdlp(f"{series_name} מאחורי הקלעים", series_name),
+        _search_ytdlp(f"{series_name} פספוסים", series_name),
     )
-
-    # אם לא נמצא — נסה בשאילתה חלופית
     if not bts:
-        bts = await _search(f"{series_name} behind the scenes", series_name)
+        bts = await _search_ytdlp(f"{series_name} behind the scenes", series_name)
     if not bloopers:
-        bloopers = await _search(f"{series_name} NG blooper", series_name)
+        bloopers = await _search_ytdlp(f"{series_name} NG blooper", series_name)
 
-    print(f"Extras for '{series_name}': {len(bts)} bts, {len(bloopers)} bloopers")
+    print(f"Extras via yt-dlp: {len(bts)} bts, {len(bloopers)} bloopers")
     return {"bts": bts, "bloopers": bloopers}
 
 
-async def _search(query: str, series_name: str) -> List[Dict[str, Any]]:
+async def _find_via_api(series_name: str) -> Dict[str, List[Dict[str, Any]]]:
+    """חיפוש דרך YouTube Data API."""
+    async with httpx.AsyncClient() as client:
+        bts = await _search_api(client, f"{series_name} מאחורי הקלעים")
+        bloopers = await _search_api(client, f"{series_name} פספוסים")
+    return {"bts": bts, "bloopers": bloopers}
+
+
+async def _search_api(client: httpx.AsyncClient, query: str) -> List[Dict[str, Any]]:
+    resp = await client.get(
+        YOUTUBE_SEARCH_URL,
+        params={"key": YOUTUBE_API_KEY, "q": query, "type": "video", "part": "snippet", "maxResults": 4},
+        timeout=10,
+    )
+    data = resp.json()
+    if data.get("error", {}).get("errors", [{}])[0].get("reason") == "quotaExceeded":
+        raise Exception("quotaExceeded")
+
+    results = []
+    for item in data.get("items", []):
+        vid_id = item.get("id", {}).get("videoId")
+        if not vid_id:
+            continue
+        snippet = item.get("snippet", {})
+        results.append({
+            "video_id": vid_id,
+            "url": f"https://www.youtube.com/watch?v={vid_id}",
+            "embed_url": f"https://www.youtube.com/embed/{vid_id}?autoplay=1",
+            "thumbnail_url": snippet.get("thumbnails", {}).get("medium", {}).get("url", f"https://img.youtube.com/vi/{vid_id}/mqdefault.jpg"),
+            "title": snippet.get("title", ""),
+            "channel": snippet.get("channelTitle", ""),
+            "duration_seconds": 0,
+            "can_embed": True,
+        })
+    return results[:3]
+
+
+async def _search_ytdlp(query: str, series_name: str) -> List[Dict[str, Any]]:
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(None, _search_sync, query, series_name)
 

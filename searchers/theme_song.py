@@ -1,13 +1,115 @@
 """
-חיפוש שיר פתיחה של סדרה ב-YouTube דרך yt-dlp (ללא API key).
+חיפוש שיר פתיחה של סדרה ב-YouTube.
+מנסה קודם YouTube Data API, ואם quota נגמר — עובר ל-yt-dlp.
 """
 import asyncio
+import os
+import httpx
 from typing import Optional, Dict, Any
+
+YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY")
+YOUTUBE_SEARCH_URL = "https://www.googleapis.com/youtube/v3/search"
+YOUTUBE_VIDEO_URL = "https://www.googleapis.com/youtube/v3/videos"
 
 
 async def find_theme_song(series_name: str) -> Optional[Dict[str, Any]]:
+    # נסה קודם YouTube API
+    if YOUTUBE_API_KEY:
+        try:
+            result = await _find_via_api(series_name)
+            if result:
+                print(f"Theme song via API: {result['title']}")
+                return result
+        except Exception as e:
+            print(f"YouTube API failed ({e}), falling back to yt-dlp")
+
+    # fallback — yt-dlp
+    print("Theme song: using yt-dlp fallback")
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(None, _find_sync, series_name)
+
+
+async def _find_via_api(series_name: str) -> Optional[Dict[str, Any]]:
+    """חיפוש דרך YouTube Data API."""
+    queries = [
+        f"{series_name} שיר פתיחה",
+        f"{series_name} theme song",
+    ]
+    candidates = []
+    seen_ids: set = set()
+
+    async with httpx.AsyncClient() as client:
+        for query in queries:
+            resp = await client.get(
+                YOUTUBE_SEARCH_URL,
+                params={
+                    "key": YOUTUBE_API_KEY,
+                    "q": query,
+                    "type": "video",
+                    "part": "snippet",
+                    "maxResults": 5,
+                    "relevanceLanguage": "iw",
+                },
+                timeout=10,
+            )
+            data = resp.json()
+
+            # אם quota נגמר — זרוק exception כדי לעבור ל-yt-dlp
+            if data.get("error", {}).get("errors", [{}])[0].get("reason") == "quotaExceeded":
+                raise Exception("quotaExceeded")
+
+            new_ids = [
+                item["id"]["videoId"]
+                for item in data.get("items", [])
+                if item["id"].get("videoId") and item["id"]["videoId"] not in seen_ids
+            ]
+            seen_ids.update(new_ids)
+            if not new_ids:
+                continue
+
+            details = await client.get(
+                YOUTUBE_VIDEO_URL,
+                params={"key": YOUTUBE_API_KEY, "id": ",".join(new_ids), "part": "contentDetails,statistics,snippet,status"},
+                timeout=10,
+            )
+            for item in details.json().get("items", []):
+                vid_id = item["id"]
+                snippet = item.get("snippet", {})
+                stats = item.get("statistics", {})
+                status = item.get("status", {})
+                if status.get("privacyStatus") != "public":
+                    continue
+                import re
+                duration = _parse_duration(item.get("contentDetails", {}).get("duration", "PT0S"))
+                view_count = int(stats.get("viewCount", 0))
+                title = snippet.get("title", "")
+                channel = snippet.get("channelTitle", "")
+                score = _score(title, channel, series_name, duration, view_count)
+                candidates.append({
+                    "score": score,
+                    "video_id": vid_id,
+                    "url": f"https://www.youtube.com/watch?v={vid_id}",
+                    "embed_url": f"https://www.youtube.com/embed/{vid_id}?autoplay=1",
+                    "title": title,
+                    "channel": channel,
+                    "duration_seconds": duration,
+                    "view_count": view_count,
+                    "can_embed": status.get("embeddable", True),
+                })
+
+    if not candidates:
+        return None
+    best = max(candidates, key=lambda c: c["score"])
+    best.pop("score")
+    return best
+
+
+def _parse_duration(duration: str) -> int:
+    import re
+    match = re.match(r"PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?", duration)
+    if not match:
+        return 0
+    return int(match.group(1) or 0) * 3600 + int(match.group(2) or 0) * 60 + int(match.group(3) or 0)
 
 
 def _find_sync(series_name: str) -> Optional[Dict[str, Any]]:

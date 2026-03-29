@@ -210,10 +210,16 @@ def _score(title: str, channel: str, series_name: str, duration: int, view_count
     elif 30 <= duration <= 300:
         score += 8.0
 
-    # פופולריות
-    if view_count >= 100_000:
-        score += 10.0
+    # פופולריות — משקל גבוה כי ערוצים רשמיים תמיד יש להם יותר צפיות
+    if view_count >= 1_000_000:
+        score += 40.0
+    elif view_count >= 100_000:
+        score += 30.0
     elif view_count >= 10_000:
+        score += 15.0
+    elif view_count >= 1_000:
         score += 5.0
+    elif view_count < 500:
+        score -= 20.0  # עונש לסרטונים עם מעט מאוד צפיות
 
     return score

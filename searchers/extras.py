@@ -48,9 +48,7 @@ async def _run_queries(client: httpx.AsyncClient, queries: List[str]) -> List[Di
                     "q": query,
                     "type": "video",
                     "part": "snippet",
-                    "maxResults": 5,
-                    "relevanceLanguage": "iw",
-                    "regionCode": "IL",
+                    "maxResults": 8,
                 },
                 timeout=10,
             )
@@ -83,9 +81,6 @@ async def _run_queries(client: httpx.AsyncClient, queries: List[str]) -> List[Di
                 content = item.get("contentDetails", {})
                 stats = item.get("statistics", {})
                 status = item.get("status", {})
-
-                if status.get("privacyStatus") != "public":
-                    continue
 
                 can_embed = status.get("embeddable", True)
                 duration = _parse_duration(content.get("duration", "PT0S"))

@@ -125,6 +125,23 @@ async def submit_feedback(
     return {"status": "ok", "message": "תודה! המשוב נשמר"}
 
 
+@app.get("/api/behind-the-scenes", summary="מאחורי הקלעים ופספוסים")
+async def get_behind_the_scenes(
+    series: str = Query(..., description="שם הסדרה"),
+):
+    """
+    מחפש ב-YouTube סרטוני מאחורי הקלעים ופספוסים לסדרה.
+    מחזיר עד 4 סרטונים מכל סוג.
+    """
+    from searchers.extras import find_extras
+    data = await find_extras(series)
+
+    if not data["bts"] and not data["bloopers"]:
+        raise HTTPException(status_code=404, detail=f"לא נמצאו סרטונים עבור '{series}'")
+
+    return data
+
+
 @app.get("/api/theme-song", summary="שיר פתיחה של סדרה")
 async def get_theme_song(
     series: str = Query(..., description="שם הסדרה"),
